@@ -1,0 +1,313 @@
+---
+title: "Exploratory Data Analysis"
+author: "Juan Orduz"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+# Prepare Notebook
+
+```{r}
+library(glue)
+library(igraph)
+library(magrittr)
+library(readxl)
+library(tidytext)
+library(tidyverse)
+library(widyr)
+library(wordcloud)
+```
+
+# Read Data
+
+```{r}
+# Data Set 1
+haupttabelle_raw_df <- read_csv(file = "data/Haupttabelle_ueberarbeitet_20180424 - Tabelle1.csv")
+
+# Data Set 2
+sheets <- excel_sheets(path = "data/Survey Responses SOG.xlsx")
+
+survey_responses_raw <- sheets %>%
+  keep(str_detect(string = ., pattern = "r")) %>% 
+  map(.f = function(sheet) {
+    read_excel(path = "data/Survey Responses SOG.xlsx", sheet = sheet)
+  }
+)
+```
+
+# Data Cleaning
+
+```{r}
+haupttabelle_df <- haupttabelle_raw_df %>% 
+  mutate(success = case_when(
+    Abschlussnote %in% c("D", "S") ~ "yes", # D and S are passed.
+    Abschlussnote == "failed" ~ "no", 
+    TRUE ~ NA_character_
+  )) %>% 
+  mutate_if(.predicate = is.character, .funs = str_to_lower)
+```
+
+```{r}
+survey_responses_df <- survey_responses_raw %>% 
+  map_df(.f = 
+    ~ gather(., key = Frage, value = Answer, ... = - `Personen-ID`, - Jahr) %>% 
+      unite(col = Jahr_Frage, ... = Jahr, Frage, sep = "_")
+)
+```
+
+# Combine Data 
+
+```{r}
+# TODO: Verify Unique_ID convention. 
+all_data_df <- full_join(x = haupttabelle_df, y = survey_responses_df, by = c("Unique_ID" = "Personen-ID"))
+```
+
+# Descriptive Statistics
+
+## Haupttabelle
+
+```{r}
+# Get number of unique students. 
+haupttabelle_df %>% pull(Unique_ID) %>% unique() %>% length()
+```
+
+```{r, fig.align="center"}
+# Plot distribution of studies duration for successful students.
+haupttabelle_df %>% 
+  filter(success == "yes") %>% 
+  mutate(Studienabschlussjahr = as.numeric(Studienabschlussjahr)) %>% 
+  mutate(studies_length = Studienabschlussjahr - Studienbeginn) %>% 
+  ggplot() +
+  geom_histogram(mapping = aes(studies_length), fill = "dark blue") +
+  labs(title = "Successful Studies Duration Distribution")
+  
+```
+
+
+```{r, fig.align="center"}
+# Plot time development of new students per gender. 
+haupttabelle_df %>% 
+  group_by(Geschlecht, Studienbeginn) %>% 
+  count() %>% 
+  ggplot() +
+  geom_line(mapping = aes(x = Studienbeginn, y = n, color = Geschlecht), alpha = 0.5) +
+  geom_point(mapping = aes(x = Studienbeginn, y = n, color = Geschlecht)) +
+  labs(title = "Studienbeginn Timeline") +
+  scale_color_manual(values = c("dark blue", "dark red"))
+  
+```
+
+```{r, fig.align="center"}
+# Plot grade distribution of students per gender. 
+#   - D and S mean pass (D is the best grade).
+haupttabelle_df %>% 
+  count(Geschlecht, Abschlussnote) %>% 
+  mutate(Abschlussnote = reorder(Abschlussnote,  - n)) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Abschlussnote, y = n, fill = Geschlecht), 
+           stat = "identity") +
+  labs(title = "Grade Distribution by Gender") +
+  scale_fill_manual(values = c("dark blue", "dark red"))
+```
+
+```{r, fig.align="center"}
+# Plot grade share of students per gender. 
+haupttabelle_df %>% 
+  count(Geschlecht, Abschlussnote) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Abschlussnote, y = n, fill = Geschlecht), 
+           stat = "identity", 
+           position = "fill") +
+  labs(title = "Grade Share by Gender") +
+  scale_fill_manual(values = c("dark blue", "dark red"))
+```
+
+```{r, fig.align="center"}
+# Plot count of sucess as a function of birth date. 
+haupttabelle_df %>% 
+  filter(Geburtsjahr > 1960) %>% 
+  filter(! is.na(success)) %>% 
+  count(Geburtsjahr, success) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Geburtsjahr, y = n, fill = success), 
+           stat = "identity", 
+           position="dodge") +
+  labs(title = "Success Count") +
+  scale_fill_manual(values = c("dark red", "dark green"))
+```
+
+```{r, fig.align="center"}
+# Plot top words on the project categories. 
+haupttabelle_df %>% 
+  select(Projektkategorie_vereinfacht) %>% 
+  unnest_tokens(output = word, input = Projektkategorie_vereinfacht) %>% 
+  filter(! is.na(word)) %>% 
+  count(word) %>% 
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col(fill = "dark blue") +
+  xlab(NULL) +
+  coord_flip() +
+  labs(title = "Projektkategorie - Word Count")
+```
+
+
+# Deep Dive
+
+## Text Analysis: Remarks on Non-Successful Students
+
+### Word Count
+
+We want to undersand the remarks added to the data set associated to the students which were not successful. We use basic word statistics to explore this feature. 
+
+```{r}
+anmerkungen_fail_raw_df <- haupttabelle_df %>% 
+  # filter for non-successful students. 
+  filter(success == "no") %>% 
+  select(Anmerkungen) %>% 
+  rowid_to_column()
+```
+
+```{r}
+# Get german stopwords. 
+stopwords_df <- tibble(word = stopwords::stopwords(language = "de"))
+# We want to keep some stop words. 
+stopwords_to_keep <- c("nicht", "nichts")
+stopwords_df %<>% filter(!(word %in% stopwords_to_keep))
+
+# Get words. 
+words_df <- anmerkungen_fail_raw_df %>% 
+  unnest_tokens(output = word, input = Anmerkungen) %>% 
+  anti_join(y = stopwords_df, by = "word")  %>% 
+  filter(is.na(as.numeric(word))) %>% 
+  rowwise() %>% 
+  mutate(word_length = str_length(word)) %>% 
+  filter(word_length > 1) %>% ungroup()
+
+# Get words count. 
+word_count <- words_df %>% 
+  count(word) %>% 
+  arrange(- n)
+```
+
+We begin by visualizing a wordcloud.
+
+```{r, fig.align="center"}
+wordcloud(words = word_count$word, 
+          freq = word_count$n, 
+          min.freq = 1, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+
+```{r, fig.align="center"}
+# We now plot the count of the top words. 
+word_count %>% 
+  filter(n > 4) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col(fill = "dark blue") +
+  xlab(NULL) +
+  coord_flip() +
+  labs(title = "Anmerkungen -  Non Success - Word Count")
+```
+
+### Pairwise Word Count
+
+We now count the words the pairwise word appearance within a same Anmerkung. We encode this into a weighted network (graph) to try to find topics. 
+
+```{r, fig.width=50, fig.height=50, fig.align="center"}
+# We save the network plot as a pdf file.
+pdf("annmerkungen_non_success_word_network.pdf")
+
+# Compute pairwise word count. 
+pair_wise_count_df <- words_df %>% 
+  pairwise_count(item = word, feature = rowid) %>% 
+  filter(item1 < item2) %>% arrange(item1, item2) %>% 
+  arrange(- n)
+
+# Set a threshold for visualization.
+threshold <- 1
+# Define network object. 
+network <-  pair_wise_count_df %>%
+  filter(n > threshold) %>%
+  graph_from_data_frame(directed = FALSE)
+
+# Store the degree.
+V(network)$degree <- degree(graph = network)
+
+# Compute the weight shares.
+E(network)$width <- E(network)$n/max(E(network)$n)
+ 
+# Plot the network.
+plot(network, 
+     vertex.color = 'lightblue',
+     # Scale node size by degree.
+     vertex.size = V(network)$degree / 15,
+     vertex.label.color = 'black', 
+     vertex.label.cex = 0.3, 
+     vertex.label.dist = 0.5,
+     edge.color = 'gray', 
+     # Set edge width proportional to the weight relative value.
+     edge.width = 1*E(network)$width,
+     main = "Anmerkungen -  Non Success - Paiwise Word Count", 
+     sub = glue('Weight Threshold: {threshold}'), 
+     alpha = 50)
+
+dev.off()
+```
+
+```{r, fig.width=10, fig.height=8, fig.align="center"}
+plot(network, 
+     vertex.color = 'lightblue',
+     # Scale node size by degree.
+     vertex.size = V(network)$degree / 15,
+     vertex.label.color = 'black', 
+     vertex.label.cex = 0.3, 
+     vertex.label.dist = 0.5,
+     edge.color = 'gray', 
+     # Set edge width proportional to the weight relative value.
+     edge.width = 1*E(network)$width,
+     main = "Anmerkungen -  Non Success - Paiwise Word Count", 
+     sub = glue('Weight Threshold: {threshold}'), 
+     alpha = 50)
+```
+
+
+## Text Analysis: Personal Information
+
+We want to see if there is any difference between the successful vs non-successful students personal information, which is encoded as free text. 
+
+```{r}
+# Let un compute the share of students with personal information available. 
+haupttabelle_df %>% filter(!is.na(pesoenliche_Information)) %>% nrow() / nrow(haupttabelle_df)
+```
+
+
+```{r, fig.align="center"}
+pesoenliche_info_raw_df <- haupttabelle_df %>% 
+  select(success, pesoenliche_Information) %>% 
+  filter(! is.na(success)) %>% 
+  rowid_to_column()
+
+# Plot top words per success tag. 
+pesoenliche_info_raw_df %>% 
+  unnest_tokens(output = word, input = pesoenliche_Information) %>% 
+  filter(!is.na(word)) %>% 
+  anti_join(y = stopwords_df, by = "word") %>% 
+  count(success, word) %>% 
+  mutate(word = reorder(word, n)) %>%
+  filter(n > 1) %>% 
+  ggplot(aes(word, n)) +
+  geom_col(fill = "dark blue") +
+  xlab(NULL) +
+  coord_flip() +
+  labs(title = "Personal Info - Word Count") +
+  facet_grid(cols = vars(success))
+```
+
