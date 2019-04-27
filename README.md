@@ -1,5 +1,6 @@
-# Datathon-2019-SOG
+# Data Science For Social Good Berlin Datathon 2019 - *Studieren ohne Grenzen* Project
 
+<<<<<<< HEAD
 ## Intro
 
 [Studieren Ohne Grenzen](https://www.studieren-ohne-grenzen.org/) (SOG) awards scholarships to students in need from the world’s conflict zones and aims to improve local education infrastructure.
@@ -32,3 +33,6 @@ Over the years the surveys changed, some questions were added, some removed and 
 ### Step 4 - Deployment
 * [Shiny application](tbd)
 * [Report (Markdown document)](tbd)
+=======
+We would like to use this repo as a container for any scripts / Jupyter Notebooks that were developed during the DSSG Berlin Datathon 2019.
+>>>>>>> 169ec82bbc2da47356892675e0e6680995787103
