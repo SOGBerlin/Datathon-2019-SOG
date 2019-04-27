@@ -6,6 +6,8 @@ output:
     df_print: paged
 ---
 
+This exploratory analysis could server as a first step towards a reporting template which might be used to track and visualize the status of the past and current students. Potentially, this couls also be displayed in a [Shiny Dashboard](https://rstudio.github.io/shinydashboard/). 
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
 ```
@@ -49,7 +51,8 @@ haupttabelle_df <- haupttabelle_raw_df %>%
     Abschlussnote == "failed" ~ "no", 
     TRUE ~ NA_character_
   )) %>% 
-  mutate_if(.predicate = is.character, .funs = str_to_lower)
+  mutate_if(.predicate = is.character, .funs = str_to_lower) %>% 
+  mutate(Abschlussnote = as_factor(Abschlussnote, level = c("d", "s", "fail", "ausstehend")))
 ```
 
 ```{r}
@@ -88,6 +91,15 @@ haupttabelle_df %>%
   
 ```
 
+```{r, fig.align="center"}
+haupttabelle_df %>% 
+  filter(Geburtsjahr > 1950) %>% # There are some outliers (e.g. 1905).
+  ggplot(mapping = aes(x = Geburtsjahr, fill = Geschlecht)) +
+  geom_density() +
+  scale_fill_manual(values = c("dark blue", "dark red")) +
+  facet_grid(cols = vars(Geschlecht)) +
+  labs(title = "Birthdate Distribution per Gender", y = "")
+```
 
 ```{r, fig.align="center"}
 # Plot time development of new students per gender. 
@@ -107,7 +119,6 @@ haupttabelle_df %>%
 #   - D and S mean pass (D is the best grade).
 haupttabelle_df %>% 
   count(Geschlecht, Abschlussnote) %>% 
-  mutate(Abschlussnote = reorder(Abschlussnote,  - n)) %>% 
   ggplot() +
   geom_bar(mapping = aes(x = Abschlussnote, y = n, fill = Geschlecht), 
            stat = "identity") +
@@ -125,6 +136,47 @@ haupttabelle_df %>%
            position = "fill") +
   labs(title = "Grade Share by Gender") +
   scale_fill_manual(values = c("dark blue", "dark red"))
+```
+
+```{r, fig.align="center"}
+haupttabelle_df %>% 
+  count(Abschlussnote, Geschlecht) %>% 
+  spread(key = Geschlecht, value = n, fill = 0) %>% 
+  rowwise() %>% 
+  mutate(
+    p = prop.test(x = weiblich, (weiblich + männlich))$estimate,
+    ci_lwr = prop.test(x = weiblich, (weiblich + männlich))$conf.int[1],
+    ci_upr = prop.test(x = weiblich, (weiblich + männlich))$conf.int[2]
+  ) %>% 
+  gather(key = Geschlecht, ... = c("weiblich", "männlich")) %>% 
+  ggplot(mapping = aes(x = Abschlussnote, y = p)) +
+  geom_point(color = "dark red") +
+  geom_errorbar(mapping = aes(ymin = ci_lwr, ymax = ci_upr), color = "dark red", alpha = 0.5) +
+  labs(title = "Share of Women Grades", y = "Share")
+```
+
+
+
+```{r, fig.align="center"}
+# Plot of the sucess ratio per gender with 95% confidence interval. 
+haupttabelle_df %>% 
+  filter(!is.na(success)) %>% 
+  count(Studienbeginn, Geschlecht, success) %>% 
+  spread(key = success, value = n, fill = 0) %>% 
+  rowwise() %>% 
+  mutate(
+    p = prop.test(x = yes, (yes + no))$estimate,
+    ci_lwr = prop.test(x = yes, (yes + no))$conf.int[1],
+    ci_upr = prop.test(x = yes, (yes + no))$conf.int[2]
+  ) %>% 
+  gather(key = success, ... = yes, no) %>% 
+  ggplot(mapping = aes(x = Studienbeginn, y = p, color = Geschlecht)) +
+  geom_point() +
+  geom_errorbar(mapping = aes(ymin = ci_lwr, ymax = ci_upr), alpha = 0.5) +
+  geom_line(alpha = 1) +
+  scale_color_manual(values = c("dark blue", "dark red")) +
+  facet_grid(rows = vars(Geschlecht)) +
+  labs(title = "Success Ratio per Starting Year (Studienbeginn)", y = "Success Rate")
 ```
 
 ```{r, fig.align="center"}
@@ -225,8 +277,13 @@ We now count the words the pairwise word appearance within a same Anmerkung. We 
 # We save the network plot as a pdf file.
 pdf("annmerkungen_non_success_word_network.pdf")
 
+# Remove manually noisy words. 
+# E.g. The sentence "(siehe Email CADEP 04.03.15)" appears often on the this column.
+words_to_rm <- c("04.03.15", "mail", "email", "cadep", "siehe")
+
 # Compute pairwise word count. 
 pair_wise_count_df <- words_df %>% 
+  filter(!(word %in% words_to_rm)) %>% 
   pairwise_count(item = word, feature = rowid) %>% 
   filter(item1 < item2) %>% arrange(item1, item2) %>% 
   arrange(- n)
@@ -257,7 +314,7 @@ plot(network,
      edge.width = 1*E(network)$width,
      main = "Anmerkungen -  Non Success - Paiwise Word Count", 
      sub = glue('Weight Threshold: {threshold}'), 
-     alpha = 50)
+     alpha = 80)
 
 dev.off()
 ```
@@ -307,7 +364,7 @@ pesoenliche_info_raw_df %>%
   geom_col(fill = "dark blue") +
   xlab(NULL) +
   coord_flip() +
-  labs(title = "Personal Info - Word Count") +
+  labs(title = "Personal Info by Success Tag - Word Count") +
   facet_grid(cols = vars(success))
 ```
 
