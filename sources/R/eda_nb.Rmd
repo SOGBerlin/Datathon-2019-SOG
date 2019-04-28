@@ -24,7 +24,7 @@ library(tidyverse)
 library(widyr)
 library(wordcloud)
 
-MAIN_DIR <- "/Users/juanitorduz/Desktop/Datathon-2019-SOG"
+MAIN_DIR <- here::here()
 ```
 
 # Read Data
@@ -54,7 +54,7 @@ haupttabelle_df <- haupttabelle_raw_df %>%
     TRUE ~ NA_character_
   )) %>% 
   mutate_if(.predicate = is.character, .funs = str_to_lower) %>% 
-  mutate(Abschlussnote = as_factor(Abschlussnote, level = c("d", "s", "fail", "ausstehend")))
+  mutate(Abschlussnote = as_factor(Abschlussnote, level = c("d", "s", "failed", "ausstehend")))
 ```
 
 ```{r}
@@ -63,6 +63,8 @@ survey_responses_df <- survey_responses_raw %>%
     ~ gather(., key = Frage, value = Answer, ... = - `Personen-ID`, - Jahr) %>% 
       unite(col = Jahr_Frage, ... = Jahr, Frage, sep = "_")
 )
+
+survey_responses_df %<>% mutate_if(.predicate = is.character, .funs = str_to_lower) 
 ```
 
 # Combine Data 
@@ -112,7 +114,8 @@ haupttabelle_df %>%
   geom_line(mapping = aes(x = Studienbeginn, y = n, color = Geschlecht), alpha = 0.5) +
   geom_point(mapping = aes(x = Studienbeginn, y = n, color = Geschlecht)) +
   labs(title = "Studienbeginn Timeline") +
-  scale_color_manual(values = c("dark blue", "dark red"))
+  scale_color_manual(values = c("dark blue", "dark red")) + 
+  scale_x_discrete(limits = c(2009:2017))
   
 ```
 
@@ -125,7 +128,8 @@ haupttabelle_df %>%
   geom_bar(mapping = aes(x = Abschlussnote, y = n, fill = Geschlecht), 
            stat = "identity") +
   labs(title = "Grade Distribution by Gender") +
-  scale_fill_manual(values = c("dark blue", "dark red"))
+  scale_fill_manual(values = c("dark blue", "dark red")) +
+  scale_x_discrete(limits = c("d", "s", "failed", "ausstehend"))
 ```
 
 ```{r, fig.align="center"}
@@ -137,7 +141,8 @@ haupttabelle_df %>%
            stat = "identity", 
            position = "fill") +
   labs(title = "Grade Share by Gender") +
-  scale_fill_manual(values = c("dark blue", "dark red"))
+  scale_fill_manual(values = c("dark blue", "dark red")) +
+  scale_x_discrete(limits = c("d", "s", "failed", "ausstehend"))
 ```
 
 ```{r, fig.align="center"}
@@ -153,8 +158,13 @@ haupttabelle_df %>%
   gather(key = Geschlecht, ... = c("weiblich", "männlich")) %>% 
   ggplot(mapping = aes(x = Abschlussnote, y = p)) +
   geom_point(color = "dark red") +
-  geom_errorbar(mapping = aes(ymin = ci_lwr, ymax = ci_upr), color = "dark red", alpha = 0.5) +
-  labs(title = "Share of Women Grades", y = "Share")
+  geom_errorbar(mapping = aes(ymin = ci_lwr, ymax = ci_upr), 
+                color = "dark red", 
+                alpha = 0.5) +
+  geom_hline(yintercept = 0.5, alpha = 0.5) +
+  labs(title = "Women Grades Share", y = "Share") +
+  scale_x_discrete(limits = c("d", "s", "failed", "ausstehend")) +
+  ylim(c(0, 1))
 ```
 
 
@@ -162,6 +172,8 @@ haupttabelle_df %>%
 ```{r, fig.align="center"}
 # Plot of the sucess ratio per gender with 95% confidence interval. 
 haupttabelle_df %>% 
+  # We filter for students which should have studied.
+  filter(Studienbeginn < 2016) %>% 
   filter(!is.na(success)) %>% 
   count(Studienbeginn, Geschlecht, success) %>% 
   spread(key = success, value = n, fill = 0) %>% 
@@ -171,14 +183,15 @@ haupttabelle_df %>%
     ci_lwr = prop.test(x = yes, (yes + no))$conf.int[1],
     ci_upr = prop.test(x = yes, (yes + no))$conf.int[2]
   ) %>% 
-  gather(key = success, ... = yes, no) %>% 
+  gather(key = success, ... = c("yes", "no")) %>% 
   ggplot(mapping = aes(x = Studienbeginn, y = p, color = Geschlecht)) +
   geom_point() +
   geom_errorbar(mapping = aes(ymin = ci_lwr, ymax = ci_upr), alpha = 0.5) +
   geom_line(alpha = 1) +
   scale_color_manual(values = c("dark blue", "dark red")) +
   facet_grid(rows = vars(Geschlecht)) +
-  labs(title = "Success Ratio per Starting Year (Studienbeginn)", y = "Success Rate")
+  labs(title = "Success Ratio per Starting Year (Studienbeginn)", 
+       y = "Success Rate")
 ```
 
 ```{r, fig.align="center"}
@@ -190,9 +203,24 @@ haupttabelle_df %>%
   ggplot() +
   geom_bar(mapping = aes(x = Geburtsjahr, y = n, fill = success), 
            stat = "identity", 
-           position="dodge") +
+           position = "dodge") +
   labs(title = "Success Count") +
   scale_fill_manual(values = c("dark red", "dark green"))
+```
+
+```{r, fig.align="center"}
+# Plot count of sucess as a function of birth date. 
+haupttabelle_df %>% 
+  filter(Geburtsjahr > 1960) %>% 
+  filter(! is.na(success)) %>% 
+  count(Geburtsjahr, Geschlecht, success) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Geburtsjahr, y = n, fill = success), 
+           stat = "identity", 
+           position = "dodge") +
+  labs(title = "Success Count per Gernder") +
+  scale_fill_manual(values = c("dark red", "dark green")) +
+  facet_grid(rows = vars(Geschlecht))
 ```
 
 ```{r, fig.align="center"}
@@ -251,7 +279,7 @@ word_count <- words_df %>%
 
 We begin by visualizing a wordcloud.
 
-```{r, fig.align="center"}
+```{r, fig.width=8, fig.align="center"}
 wordcloud(words = word_count$word, 
           freq = word_count$n, 
           min.freq = 1, 
@@ -368,5 +396,95 @@ pesoenliche_info_raw_df %>%
   coord_flip() +
   labs(title = "Personal Info by Success Tag - Word Count") +
   facet_grid(cols = vars(success))
+```
+
+## Text Analysis: Projektarbeitstitel
+
+```{r, fig.width=8, fig.align="center"}
+words_df <- haupttabelle_df %>% 
+  select(Projektarbeitstitel) %>% 
+  rowid_to_column() %>% 
+  unnest_tokens(output = word, input = Projektarbeitstitel) %>% 
+  anti_join(y = stopwords_df, by = "word")  %>% 
+  filter(is.na(as.numeric(word))) %>% 
+  rowwise() %>% 
+  mutate(word_length = str_length(word)) %>% 
+  filter(word_length > 1) %>% 
+  ungroup()
+
+# Get words count. 
+word_count <- words_df %>% 
+  count(word) %>% 
+  arrange(- n)
+
+wordcloud(words = word_count$word, 
+          freq = word_count$n, 
+          min.freq = 3, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+
+```{r, fig.width=50, fig.height=50, fig.align="center"}
+# We run a similar network analysis to create a visualization about the project titles. 
+
+words_to_rm <- c("dass", "ab", "möchte", "geht", "sollen", "de", "mehr", "somit", "dabei", "darauf", "sowie")
+
+# Compute pairwise word count. 
+pair_wise_count_df <- words_df %>% 
+  filter(!(word %in% words_to_rm)) %>% 
+  pairwise_count(item = word, feature = rowid) %>% 
+  filter(item1 < item2) %>% arrange(item1, item2) %>% 
+  arrange(- n)
+
+# Set a threshold for visualization.
+threshold <- 2
+# Define network object. 
+network <-  pair_wise_count_df %>%
+  filter(n > threshold) %>%
+  graph_from_data_frame(directed = FALSE)
+
+# Store the degree.
+V(network)$degree <- degree(graph = network)
+
+# Compute the weight shares.
+E(network)$width <- E(network)$n/max(E(network)$n)
+```
+
+```{r, fig.width=50, fig.height=50, fig.align="center", eval=FALSE}
+# We save the network plot as a pdf file.
+pdf("projektarbeitstitel_word_network.pdf")
+# Plot the network.
+plot(network, 
+     vertex.color = rgb(0,0,1, alpha = 0.2),
+     # Scale node size by degree.
+     vertex.size = 1.0*V(network)$degree,
+     vertex.label.color = 'black', 
+     vertex.label.cex = 0.3, 
+     vertex.label.dist = 0.0,
+     edge.color = 'gray', 
+     # Set edge width proportional to the weight relative value.
+     edge.width = 2*E(network)$width,
+     main = "Projektarbeitstitel - Paiwise Word Count", 
+     #sub = glue('Weight Threshold: {threshold}'), 
+     alpha = 80)
+
+dev.off()
+```
+
+```{r, fig.width=10, fig.height=8, fig.align="center"}
+# Plot the network.
+plot(network, 
+     vertex.color = rgb(0,0,1, alpha = 0.2),
+     # Scale node size by degree.
+     vertex.size = 1.0*V(network)$degree,
+     vertex.label.color = 'black', 
+     vertex.label.cex = 0.3, 
+     vertex.label.dist = 0.0,
+     edge.color = 'gray', 
+     # Set edge width proportional to the weight relative value.
+     edge.width = 2*E(network)$width,
+     main = "Projektarbeitstitel - Paiwise Word Count", 
+     #sub = glue('Weight Threshold: {threshold}'), 
+     alpha = 80)
 ```
 
