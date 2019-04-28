@@ -1,0 +1,357 @@
+---
+title: "Exploratory analysis of non-text data"
+author: Alena Churakova
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+
+```{r load}
+library(tidyverse)
+library(gridExtra)
+library(glue)
+MAIN_DIR <- "/Users/alenachurakova/Desktop/SOG"
+```
+
+Load survey from different years and combine non-text columns
+
+```{r}
+responses2015 <- read_csv(file = glue("{MAIN_DIR}/data/Survey Responses SOG - responses_2015.csv"))
+
+response_short2015 <- responses2015 %>% select('Personen-ID', 'Jahr', 'Frage 2', 'Frage 4', 'Frage 5', 'Frage 7', 'Frage 8', 'Frage 10', 'Frage 11', 'Frage 14', 'Frage 18', 'Frage 20', 'Frage 22', 'Frage 23', 'Frage 24', 'Frage 26', 'Frage 27', 'Frage 28') %>% 
+        rename(PersonenID = 'Personen-ID',
+               ISEA_study_improve = 'Frage 2', 
+               ISEA_organisation = 'Frage 4', 
+               ISEA_organisation_improve = 'Frage 5', 
+               CADEP_support = 'Frage 7', 
+               CADEP_support_improve = 'Frage 8',
+               SOG_support = 'Frage 10',
+               SOG_support_improve = 'Frage 11',
+               difficulties = 'Frage 14',
+               project_goals_change = 'Frage 18',
+               project_developed = 'Frage 20',
+               project_status_plan = 'Frage 22',
+               project_status_finance_plan = 'Frage 23',
+               project_status_execution = 'Frage 24',
+               project_future_plan = 'Frage 26',
+               project_future_finance_plan = 'Frage 27',
+               project_future_execution = 'Frage 28'
+               ) %>% mutate_at(vars(ISEA_study_improve, ISEA_organisation_improve, CADEP_support_improve, SOG_support_improve, difficulties, project_goals_change, project_developed, project_status_plan, project_status_finance_plan, project_status_finance_plan, project_status_execution, project_future_plan, project_future_finance_plan, project_future_execution), factor) %>%
+                   mutate_at(vars(Jahr), as.numeric)
+
+responses2017 <- read_csv(file = glue("{MAIN_DIR}/data/Survey Responses SOG - responses_2017.csv"))
+
+response_short2017 <- responses2017 %>% select('Personen-ID', 'Jahr', 'Frage 1', 'Frage 3', 'Frage 5', 'Frage 7', 'Frage 8','Frage 9', 'Frage 11', 'Frage 12', 'Frage 14', 'Frage 15', 'Frage 16', 'Frage 20','Frage 21', 'Frage 22', 'Frage 24', 'Frage 28', 'Frage 29', 'Frage 30', 'Frage 31', 'Frage 32', 'Frage 33', 'Frage 34') %>% 
+        rename(PersonenID = 'Personen-ID',
+                ISEA_study = 'Frage 1', 
+               CADEP_support = 'Frage 3',
+               SOG_support = 'Frage 5',
+               SOG_support_improve = 'Frage 7',
+               difficulties = 'Frage 9',
+               study_applicable = 'Frage 11',
+               project_goals_change = 'Frage 12',
+               project_status_plan = 'Frage 14',
+               project_status_finance_plan = 'Frage 15',
+               project_status_execution = 'Frage 16',
+               project_future_plan = 'Frage 20',
+               project_future_finance_plan = 'Frage 21',
+               project_future_execution = 'Frage 22',
+               project_problem_finance = 'Frage 24',
+               project_risk_finance = 'Frage 28', 
+               project_risk_climate = 'Frage 29', 
+               project_risk_crime = 'Frage 30',
+               project_risk_unrest = 'Frage 31',
+               project_risk_epidemie = 'Frage 32',
+               project_risk_illness = 'Frage 33',
+               project_risk_family_problems = 'Frage 34') %>% 
+        mutate_at(vars(SOG_support_improve, difficulties, study_applicable, project_goals_change, project_status_plan, project_status_finance_plan, project_status_finance_plan, project_status_execution, project_future_plan, project_future_finance_plan, project_future_execution), factor) %>%
+        mutate_at(vars(Jahr), as.numeric) %>%
+        mutate(difficulties = recode(difficulties, '1' = '0', '2' = '1', '3' = '1', '4' = '1', '5' = '1')) %>%
+        mutate(project_risk_climate = na_if(project_risk_climate, 0))
+
+
+responces_15_17 <- full_join(response_short2015, response_short2017) %>% drop_na(PersonenID)
+
+```
+
+Load student data and combine it with survey responses, 
+
+```{r}
+students <- read_csv(file = glue("{MAIN_DIR}/data/Haupttabelle_ueberarbeitet_20180424 - Tabelle1.csv")) %>%
+        rename(PersonenID = 'Unique_ID')
+        
+responeses_students <- responces_15_17 %>% left_join(students, by = 'PersonenID') %>%
+        mutate(study_year = Jahr - Studienbeginn) %>%
+        mutate_at(vars(Jahr, study_year), factor)
+```
+
+
+##Feedback to ISEA
+
+ISEA organisation and study contents last year were highly rated. Some of the students have improvement suggestions.
+
+```{r, echo = FALSE}
+yearColors <- setNames(c('darkturquoise', 'blue4'), levels(responeses_students$Jahr))
+
+plot_ISEA_study <- ggplot(data = responeses_students, aes(ISEA_study, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+         theme(axis.title.x=element_blank()) +
+        scale_fill_manual(values = yearColors) +
+        ggtitle("ISEA study") 
+
+plot_ISEA_study_imrove <- ggplot(data = responeses_students, aes(ISEA_study_improve, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        theme(axis.title.x=element_blank()) +
+        scale_fill_manual(values = yearColors) +
+        ggtitle("ISEA study improvement suggestions") 
+
+grid.arrange(plot_ISEA_study, plot_ISEA_study_imrove, ncol=2)
+```
+
+
+```{r, echo = FALSE}
+plot_ISEA_orga <- ggplot(data = responeses_students, aes(ISEA_organisation, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        theme(axis.title.x=element_blank()) +
+        scale_fill_manual(values = yearColors) +
+        ggtitle("ISEA organisation") 
+
+plot_ISEA_improve <- ggplot(data = responeses_students, aes(ISEA_organisation_improve, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        theme(axis.title.x=element_blank()) +
+        scale_fill_manual(values = yearColors) +
+        ggtitle("ISEA organisation improvement suggestions")
+
+grid.arrange(plot_ISEA_orga, plot_ISEA_improve, ncol=2)
+```
+
+```{r, echo = FALSE}
+ggplot(data = responeses_students %>% 
+               filter(Jahr == 2017) %>%
+               mutate(study_applicable = recode(study_applicable, '1' = 'very often', '2' = 'often', '3' = 'sometimes', '4' = 'seldom', '5' = 'not at all')), aes(study_applicable)) +
+     #   geom_bar() +
+        geom_bar(stat="count", fill="blue4")+
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Applicability of study contents (2017 survey only)") 
+```
+
+
+##Feedback to CADEP
+
+2017 survey students evaluated CADEP support higher than the 2015 ones. This might suggest support improvement. 
+
+```{r, echo = FALSE}
+plot_CADEP_support <- ggplot(data = responeses_students, aes(x = CADEP_support, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        scale_fill_manual(values = yearColors) +
+        theme(axis.title.x=element_blank()) +
+        ggtitle("CADEP support") 
+
+plot_CADEP_support_improve <- ggplot(data = responeses_students, aes(x = CADEP_support_improve, fill = Jahr)) +
+        geom_bar(position=position_dodge()) + 
+        scale_fill_manual(values = yearColors) +
+        theme(axis.title.x=element_blank()) +
+        ggtitle("CADEP support improvement suggestions")
+
+grid.arrange(plot_CADEP_support, plot_CADEP_support_improve, ncol=2)
+```
+
+##Feedback to Studieren Ohne Grenzen
+
+Students positively rate SOG support consistently over the two survey years.
+
+```{r, echo = FALSE}
+plot_SOG_support <- ggplot(data = responeses_students, aes(SOG_support, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        scale_fill_manual(values = yearColors) +
+        theme(axis.title.x=element_blank()) +
+        ggtitle("SOG support") 
+
+plot_SOG_support_improve <- ggplot(data = responeses_students, aes(SOG_support_improve, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        scale_fill_manual(values = yearColors) +
+        theme(axis.title.x=element_blank()) +
+        ggtitle("SOG support improvement suggestions")
+
+grid.arrange(plot_SOG_support, plot_SOG_support_improve, ncol=2)
+```
+
+##Diffuculties
+
+The 2015 survey asked for precense of difficultins last year, while 2017 asked a more detailes question: from "no difficulties"" up to "a lot of difficulties". For comparison between the years, the 2017 answers are turned into a binary variable.
+
+Independent of the survey year, most of the students did experience difficultins in the previous year. 
+
+```{r, echo=FALSE}
+plot_difficulties <- ggplot(data = responeses_students, aes(difficulties, fill = Jahr)) + 
+        geom_bar(position=position_dodge()) + 
+        scale_fill_manual(values = yearColors) +
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Difficulties: last year") 
+
+grid.arrange(plot_difficulties, ncol = 1)
+```
+
+
+
+
+##Project current status and next year forecast
+How project planning and execution depend on the students' study year?
+
+Study year is approximated as a difference between survey was completed and the the study begin.
+
+The planned study time is three years. 2017 survey contains a higher proportion of students with high number of study years, while more junior students completed 2015 survey.
+
+```{r, echo = FALSE}
+ggplot(data = responeses_students, aes(study_year, fill = Jahr)) + 
+       geom_bar(position=position_dodge()) +
+        theme(axis.title.x=element_blank()) +
+        scale_fill_manual(values = yearColors) +
+        ggtitle("Students' study year by the survey year") 
+```
+
+```{r}
+
+ggplot(data = responeses_students, aes(x = project_problem_finance)) +         
+        geom_bar(aes(y = (..count..)/sum(..count..)), fill="blue4") + 
+        scale_x_continuous(breaks=c(1,5), labels = c("none", "many")) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Current financial problems with the project") 
+```
+
+Some students report completed project plan already in the first study year, however, most of the students do not complete the project plan in the first year of their study.
+
+**Current status**
+
+Legend : 1 = completed, 0 = not completed.
+
+**Next year**
+
+Legend : 1 = planned to be completed, 0 = not planned to be completed.
+
+
+```{r, echo=FALSE}
+project_plan_status <- ggplot(data = responeses_students, aes(x = project_status_plan)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project plan: current status") +
+        facet_grid(cols = vars(study_year))
+
+project_plan_future <- ggplot(data = responeses_students, aes(x = project_future_plan)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project plan: next year plan") +
+        facet_grid(cols = vars(study_year))
+
+grid.arrange(project_plan_status, project_plan_future, ncol=1)
+```
+
+Some students complete the financial plan in the second year of their study, however, many report incomplete finance project plan throughout their study.
+
+```{r, echo=FALSE}
+project_finance_plan_status <- ggplot(data = responeses_students, aes(x = project_status_finance_plan)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project financial plan: current status") +
+        facet_grid(cols = vars(study_year))
+
+project_finance_plan_future <- ggplot(data = responeses_students, aes(x = project_future_finance_plan)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project financial plan: next year plan") +
+        facet_grid(cols = vars(study_year))
+
+grid.arrange(project_finance_plan_status, project_finance_plan_future, ncol=1)
+
+```
+
+Some of the students start their project in the first or third study year, but most of them do it during the second year. Nobody of survey respondents finished the project in the first year, some completed in the second year. 
+
+**Current status**
+
+Legend: 0 = in the beginning stage, 1 = in process, 2 = completed.
+
+**Next year**
+
+Legend: 0 = to be in the beginning stage, 1 = to be in process, 2 = to be completed.
+
+```{r, echo=FALSE}
+project_status_execution <- ggplot(data = responeses_students, aes(x = project_status_execution)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project execution: current status") +
+        facet_grid(cols = vars(study_year))
+
+project_future_executione <- ggplot(data = responeses_students, aes(x = project_future_execution)) + 
+        geom_bar() + 
+        theme(axis.title.x=element_blank()) +
+        ggtitle("Project execution: next year plan") +
+        facet_grid(cols = vars(study_year))
+
+grid.arrange(project_status_execution, project_future_executione, ncol=1)
+
+```
+
+##Project risks
+
+Most students evaluate risks from family problems as insignificant. Financial problems, crime and animal epidemic are among the highest evalueated project risks.
+
+```{r, echo=FALSE}
+
+project_risks_finance <- ggplot(data = responeses_students, aes(x = project_risk_finance)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Financial problems") 
+
+project_risks_climate <- ggplot(data = responeses_students, aes(x = project_risk_climate)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Climate")
+
+project_risks_crime<- ggplot(data = responeses_students, aes(x = project_risk_crime)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Crime")
+
+project_risks_unrest <- ggplot(data = responeses_students, aes(x = project_risk_unrest)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Unrest")
+
+project_risks_epidimie <- ggplot(data = responeses_students, aes(x = project_risk_epidemie)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Epidemie (animals)")
+
+project_risks_illness <- ggplot(data = responeses_students, aes(x = project_risk_illness)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_discrete(limits = c("1","2", "3", "4", "5")) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Illness")
+
+project_risks_family_problems <- ggplot(data = responeses_students, aes(x = project_risk_family_problems)) + 
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+        ylim(0, 0.6) +
+        scale_x_continuous(breaks=c(1,2,3,4,5), limits=c(0.5, 5.5)) +
+        theme(axis.title.x=element_blank(), axis.title.y=element_blank()) +
+        ggtitle("Family problems")
+
+grid.arrange(project_risks_finance,  project_risks_family_problems, project_risks_climate, project_risks_crime, project_risks_unrest, project_risks_epidimie, project_risks_illness, ncol=3)
+
+```
+
+
